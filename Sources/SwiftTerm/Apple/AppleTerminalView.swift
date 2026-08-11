@@ -2238,9 +2238,6 @@ extension TerminalView {
         
         if (notifyAccessibility) {
             accessibility.invalidate ()
-            #if os(iOS)
-            UIAccessibility.post(notification: .layoutChanged, argument: nil)
-            #endif
             #if os(macOS)
             NSAccessibility.post (element: self, notification: .valueChanged)
             NSAccessibility.post (element: self, notification: .selectedTextChanged)
