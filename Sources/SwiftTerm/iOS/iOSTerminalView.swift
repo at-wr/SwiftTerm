@@ -1981,7 +1981,11 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
                 } else {
                     baseBytes = Array(textToInsert.utf8)
                 }
-                self.send((metaActive ? [ControlCodes.ESC] : []) + baseBytes)
+                // An unsupported Control mapping must not degrade into a
+                // bare Meta ESC, which would become a different terminal key.
+                if !baseBytes.isEmpty {
+                    self.send((metaActive ? [ControlCodes.ESC] : []) + baseBytes)
+                }
                 if controlActive {
                     terminalAccessory?.controlModifier = false
                     controlModifier = false
