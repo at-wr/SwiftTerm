@@ -689,11 +689,20 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
     /// This controls whether the backspace should send ^? or ^H, the default is ^?
     public var backspaceSendsControlH: Bool = false
 
+    /// Called when a simulated Control or Meta modifier is consumed and reset.
+    ///
+    /// A host that supplies its own input accessory can use this to clear a
+    /// one-shot keycap or restore a locked modifier after terminal input. The
+    /// callback runs synchronously on the same (UIKit) executor as the input
+    /// event; it is not emitted when a modifier is enabled.
+    public var onSimulatedModifierReset: (() -> Void)?
+
     /// If this variable is set, this simulates the control key being pressed, it auto resets after we send data
     public var controlModifier: Bool = false {
         didSet {
             if oldValue && !controlModifier {
                 NotificationCenter.default.post(name: .terminalViewControlModifierReset, object: self)
+                onSimulatedModifierReset?()
             }
         }
     }
@@ -703,6 +712,7 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
         didSet {
             if oldValue && !metaModifier {
                 NotificationCenter.default.post(name: .terminalViewMetaModifierReset, object: self)
+                onSimulatedModifierReset?()
             }
         }
     }
@@ -756,7 +766,7 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
             release: release,
             shift: false,
             meta: false,
-            control: terminalAccessory?.controlModifier ?? controlModifier ?? false)
+            control: terminalAccessory?.controlModifier ?? controlModifier)
         terminalAccessory?.controlModifier = false
         controlModifier = false
         return encodedFlags
@@ -1981,17 +1991,32 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
 
         if !terminal.keyboardEnhancementFlags.isEmpty {
             sendKittyTextInput(textToInsert, applyModifiers: applyModifiers)
-        } else if applyModifiers && (terminalAccessory?.controlModifier ?? controlModifier ?? false) {
-            self.send(applyControlToEventCharacters(textToInsert))
-            terminalAccessory?.controlModifier = false
-            controlModifier = false
-        } else if applyModifiers && metaModifier {
-            self.send([0x1b])
-            self.send(txt: text)
-            metaModifier = false
         } else {
+            let controlActive = applyModifiers
+                && (terminalAccessory?.controlModifier ?? controlModifier)
+            let metaActive = applyModifiers && metaModifier
             if textToInsert == "\n" {
                 resetInputBuffer()
+            }
+
+            if controlActive || metaActive {
+                let baseBytes: [UInt8]
+                if textToInsert == "\n" {
+                    baseBytes = returnByteSequence
+                } else if controlActive {
+                    baseBytes = applyControlToEventCharacters(textToInsert)
+                } else {
+                    baseBytes = Array(textToInsert.utf8)
+                }
+                self.send((metaActive ? [ControlCodes.ESC] : []) + baseBytes)
+                if controlActive {
+                    terminalAccessory?.controlModifier = false
+                    controlModifier = false
+                }
+                if metaActive {
+                    metaModifier = false
+                }
+            } else if textToInsert == "\n" {
                 self.send(data: returnByteSequence [0...])
             } else {
                 self.send(txt: textToInsert)
@@ -2325,7 +2350,7 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
 
     private func sendKittyTextInput(_ text: String, applyModifiers: Bool) {
         let flags = terminal.keyboardEnhancementFlags
-        let controlActive = applyModifiers && (terminalAccessory?.controlModifier ?? controlModifier ?? false)
+        let controlActive = applyModifiers && (terminalAccessory?.controlModifier ?? controlModifier)
         let metaActive = applyModifiers && metaModifier
         if controlActive {
             terminalAccessory?.controlModifier = false
@@ -2351,7 +2376,7 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
                                                  baseLayoutKey: nil,
                                                  composing: kittyIsComposing))
             } else {
-                send(data: returnByteSequence [0...])
+                send((metaActive ? [ControlCodes.ESC] : []) + returnByteSequence)
             }
             return
         }
@@ -2384,17 +2409,32 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
     }
 
     private func sendBackspaceKey() {
+        let controlActive = terminalAccessory?.controlModifier ?? controlModifier
+        let metaActive = metaModifier
         if terminal.keyboardEnhancementFlags.isEmpty {
-            send([backspaceSendsControlH ? 8 : 0x7f])
-            return
+            let base: UInt8 = controlActive || backspaceSendsControlH
+                ? ControlCodes.BS
+                : ControlCodes.DEL
+            send((metaActive ? [ControlCodes.ESC] : []) + [base])
+        } else {
+            var modifiers: KittyKeyboardModifiers = []
+            if controlActive { modifiers.insert(.ctrl) }
+            if metaActive { modifiers.insert(.alt) }
+            _ = sendKittyEvent(KittyKeyEvent(key: .functional(.backspace),
+                                             modifiers: modifiers,
+                                             eventType: .press,
+                                             text: nil,
+                                             shiftedKey: nil,
+                                             baseLayoutKey: nil,
+                                             composing: kittyIsComposing))
         }
-        _ = sendKittyEvent(KittyKeyEvent(key: .functional(.backspace),
-                                         modifiers: [],
-                                         eventType: .press,
-                                         text: nil,
-                                         shiftedKey: nil,
-                                         baseLayoutKey: nil,
-                                         composing: kittyIsComposing))
+        if controlActive {
+            terminalAccessory?.controlModifier = false
+            controlModifier = false
+        }
+        if metaActive {
+            metaModifier = false
+        }
     }
 
     // this is necessary because something in the iOS IME seems to prevent
