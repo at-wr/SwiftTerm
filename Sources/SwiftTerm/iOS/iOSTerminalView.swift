@@ -2688,6 +2688,35 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
         }
     }
 
+    /// Preserves xterm's legacy C0-key behavior while applying Reach's
+    /// explicit Option-as-Meta or one-shot on-screen Meta choice. Shift-Tab is
+    /// the established Backtab sequence; Meta prefixes either complete result
+    /// with ESC. Control and Shift do not otherwise alter Tab or Escape in the
+    /// legacy protocol. Command remains UIKit-owned.
+    static func legacyControlKeySequence(
+        for keyCode: UIKeyboardHIDUsage,
+        modifierFlags: UIKeyModifierFlags,
+        includeAlternate: Bool,
+        stickyMeta: Bool
+    ) -> [UInt8]? {
+        guard !modifierFlags.contains(.command) else { return nil }
+
+        let base: [UInt8]
+        switch keyCode {
+        case .keyboardEscape:
+            base = [ControlCodes.ESC]
+        case .keyboardTab:
+            base = modifierFlags.contains(.shift)
+                ? EscapeSequences.cmdBackTab
+                : [ControlCodes.HT]
+        default:
+            return nil
+        }
+
+        let optionMeta = includeAlternate && modifierFlags.contains(.alternate)
+        return stickyMeta || optionMeta ? [ControlCodes.ESC] + base : base
+    }
+
     /// Maps physical numeric-keypad keys while the remote application has
     /// selected DECKPAM. Returning nil in DECKPNM is intentional: UIKit then
     /// supplies the active-layout numeric character through `insertText`.
@@ -3025,14 +3054,16 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
             case .keyboardInsert, .keyboardDeleteForward:
                 data = (modifiedSequence ?? Self.legacyEditingKeySequence(for: key.keyCode)).map { .bytes($0) }
                 
-            case .keyboardEscape:
-                data = .bytes ([0x1b])
-                
-            case .keyboardTab:
-                if key.modifierFlags.contains ([.shift]) {
-                    data = .bytes (EscapeSequences.cmdBackTab)
-                } else {
-                    data = .bytes ([9])
+            case .keyboardEscape, .keyboardTab:
+                let stickyMeta = metaModifier
+                data = Self.legacyControlKeySequence(
+                    for: key.keyCode,
+                    modifierFlags: key.modifierFlags,
+                    includeAlternate: optionAsMetaKey,
+                    stickyMeta: stickyMeta
+                ).map { .bytes($0) }
+                if stickyMeta, data != nil {
+                    metaModifier = false
                 }
 
             case .keyboardF1, .keyboardF2, .keyboardF3, .keyboardF4,
