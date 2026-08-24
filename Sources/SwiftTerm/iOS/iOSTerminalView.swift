@@ -32,6 +32,40 @@ public extension Notification.Name {
     static let terminalViewMetaModifierReset = Notification.Name("SwiftTerm.TerminalView.metaModifierReset")
 }
 
+/// A semantic key synthesized by an embedding app's custom input accessory.
+///
+/// Keeping this semantic lets `TerminalView` apply its live application-cursor
+/// and Kitty keyboard modes instead of requiring the host to duplicate escape
+/// sequence policy. Text is intentionally limited to one Unicode scalar: bulk
+/// text belongs to `insertText(_:)` or the host's paste path.
+public enum TerminalSimulatedKey: Equatable, Sendable {
+    case text(String)
+    case escape
+    case tab
+    case insert
+    case delete
+    case up
+    case down
+    case left
+    case right
+    case home
+    case end
+    case pageUp
+    case pageDown
+    case f1
+    case f2
+    case f3
+    case f4
+    case f5
+    case f6
+    case f7
+    case f8
+    case f9
+    case f10
+    case f11
+    case f12
+}
+
 /**
  * TerminalView provides an AppKit/UIKit front-end to the `Terminal` terminal emulator.
  * It is up to a subclass to either wire the terminal emulator to a remote terminal
@@ -2350,6 +2384,66 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
         guard let bytes = kittyEncoder().encode(event) else { return false }
         send(bytes)
         return true
+    }
+
+    /// Sends one semantic key from a host-supplied software-keyboard accessory.
+    ///
+    /// The same encoder used by physical UIKit keys owns the result, including
+    /// DECCKM, legacy xterm modifiers and negotiated Kitty enhancements. A host
+    /// therefore never has to infer terminal modes or construct escape bytes.
+    @discardableResult
+    public func sendSimulatedKey(
+        _ key: TerminalSimulatedKey,
+        modifiers: KittyKeyboardModifiers = []
+    ) -> Bool {
+        let kittyKey: KittyKey
+        let text: String?
+        switch key {
+        case .text(let value):
+            guard value.unicodeScalars.count == 1,
+                  let scalar = value.unicodeScalars.first
+            else { return false }
+            kittyKey = .unicode(scalar.value)
+            // `text` represents characters already committed by the OS and
+            // therefore bypasses legacy Alt/Control mapping. This API instead
+            // represents a semantic accessory key, so only plain/Shift input
+            // carries committed text; the encoder must still interpret Alt
+            // and Control itself.
+            text = modifiers.intersection([.alt, .ctrl]).isEmpty ? value : nil
+        case .escape: kittyKey = .functional(.escape); text = nil
+        case .tab: kittyKey = .functional(.tab); text = nil
+        case .insert: kittyKey = .functional(.insert); text = nil
+        case .delete: kittyKey = .functional(.delete); text = nil
+        case .up: kittyKey = .functional(.up); text = nil
+        case .down: kittyKey = .functional(.down); text = nil
+        case .left: kittyKey = .functional(.left); text = nil
+        case .right: kittyKey = .functional(.right); text = nil
+        case .home: kittyKey = .functional(.home); text = nil
+        case .end: kittyKey = .functional(.end); text = nil
+        case .pageUp: kittyKey = .functional(.pageUp); text = nil
+        case .pageDown: kittyKey = .functional(.pageDown); text = nil
+        case .f1: kittyKey = .functional(.f1); text = nil
+        case .f2: kittyKey = .functional(.f2); text = nil
+        case .f3: kittyKey = .functional(.f3); text = nil
+        case .f4: kittyKey = .functional(.f4); text = nil
+        case .f5: kittyKey = .functional(.f5); text = nil
+        case .f6: kittyKey = .functional(.f6); text = nil
+        case .f7: kittyKey = .functional(.f7); text = nil
+        case .f8: kittyKey = .functional(.f8); text = nil
+        case .f9: kittyKey = .functional(.f9); text = nil
+        case .f10: kittyKey = .functional(.f10); text = nil
+        case .f11: kittyKey = .functional(.f11); text = nil
+        case .f12: kittyKey = .functional(.f12); text = nil
+        }
+        return sendKittyEvent(KittyKeyEvent(
+            key: kittyKey,
+            modifiers: modifiers,
+            eventType: .press,
+            text: text,
+            shiftedKey: nil,
+            baseLayoutKey: nil,
+            composing: false
+        ))
     }
 
     private func sendKittyTextInput(_ text: String, applyModifiers: Bool) {
