@@ -2873,7 +2873,10 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
         }
     }
     
-    public override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+    /// Open for embedders that reserve a balanced local hardware shortcut in
+    /// `pressesBegan`. A subclass must be able to consume the matching release
+    /// too, especially while Kitty's report-events mode is active.
+    open override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         keyRepeat?.invalidate()
         keyRepeat = nil
         let wasCommandActive = commandActive
