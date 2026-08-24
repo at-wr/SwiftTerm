@@ -15,9 +15,7 @@ import XCTest
 final class SelectionScrollTests: XCTestCase {
 
     private func makeTerminal (rows: Int = 10, cols: Int = 40) -> Terminal {
-        let headless = HeadlessTerminal (queue: nil) { _ in }
-        headless.terminal.resize (cols: cols, rows: rows)
-        return headless.terminal
+        TerminalTestHarness.makeTerminal(cols: cols, rows: rows).terminal
     }
 
     private func paintLines (_ terminal: Terminal, count: Int) {
