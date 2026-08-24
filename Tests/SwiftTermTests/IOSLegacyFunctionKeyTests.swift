@@ -42,6 +42,46 @@ struct IOSLegacyFunctionKeyTests {
         #expect(TerminalView.legacyEditingKeySequence(for: .keyboardHome) == nil)
     }
 
+    @Test("legacy Meta prefixes Tab, Backtab and Escape without stealing Command")
+    func legacyControlKeysPreserveMeta() {
+        let cases: [(UIKeyboardHIDUsage, UIKeyModifierFlags, Bool, Bool, String)] = [
+            (.keyboardTab, [], false, false, "\t"),
+            (.keyboardTab, .control, false, false, "\t"),
+            (.keyboardTab, .shift, false, false, "\u{1b}[Z"),
+            (.keyboardTab, .alternate, false, false, "\t"),
+            (.keyboardTab, .alternate, true, false, "\u{1b}\t"),
+            (.keyboardTab, [.control, .alternate], true, false, "\u{1b}\t"),
+            (.keyboardTab, [.shift, .alternate], true, false, "\u{1b}\u{1b}[Z"),
+            (.keyboardTab, [.shift, .control, .alternate], true, false, "\u{1b}\u{1b}[Z"),
+            (.keyboardEscape, [], false, false, "\u{1b}"),
+            (.keyboardEscape, [.shift, .control], false, false, "\u{1b}"),
+            (.keyboardEscape, .alternate, true, false, "\u{1b}\u{1b}"),
+            (.keyboardEscape, [], false, true, "\u{1b}\u{1b}"),
+        ]
+
+        for (keyCode, flags, includeAlternate, stickyMeta, expected) in cases {
+            #expect(TerminalView.legacyControlKeySequence(
+                for: keyCode,
+                modifierFlags: flags,
+                includeAlternate: includeAlternate,
+                stickyMeta: stickyMeta
+            ) == Array(expected.utf8))
+        }
+
+        #expect(TerminalView.legacyControlKeySequence(
+            for: .keyboardTab,
+            modifierFlags: [.command, .shift],
+            includeAlternate: true,
+            stickyMeta: false
+        ) == nil)
+        #expect(TerminalView.legacyControlKeySequence(
+            for: .keyboardReturnOrEnter,
+            modifierFlags: .alternate,
+            includeAlternate: true,
+            stickyMeta: false
+        ) == nil)
+    }
+
     @Test("Shift, Option and Control use xterm modifier parameters")
     func modifiedCursorEditingAndFunctionKeys() {
         let cases: [(UIKeyboardHIDUsage, UIKeyModifierFlags, Bool, String)] = [
