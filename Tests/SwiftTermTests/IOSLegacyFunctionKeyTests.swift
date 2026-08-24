@@ -5,18 +5,28 @@ import UIKit
 
 @Suite("iOS legacy hardware keys")
 struct IOSLegacyFunctionKeyTests {
-    @Test("F1 through F12 map one-to-one onto the legacy sequence table")
-    func allTwelveFunctionKeysAreDistinctAndComplete() {
+    @Test("F1 through F20 map one-to-one onto the PC and VT220 sequence tables")
+    func allTwentyFunctionKeysAreDistinctAndComplete() {
         let keyCodes: [UIKeyboardHIDUsage] = [
             .keyboardF1, .keyboardF2, .keyboardF3, .keyboardF4,
             .keyboardF5, .keyboardF6, .keyboardF7, .keyboardF8,
             .keyboardF9, .keyboardF10, .keyboardF11, .keyboardF12,
         ]
 
-        let sequences = keyCodes.map(TerminalView.legacyFunctionKeySequence(for:))
-        #expect(sequences == EscapeSequences.cmdF.map(Optional.some))
-        #expect(Set(sequences.compactMap { $0 }).count == keyCodes.count)
-        #expect(TerminalView.legacyFunctionKeySequence(for: .keyboardF13) == nil)
+        let baseSequences = keyCodes.map(TerminalView.legacyFunctionKeySequence(for:))
+        #expect(baseSequences == EscapeSequences.cmdF.map(Optional.some))
+
+        let extendedKeyCodes: [UIKeyboardHIDUsage] = [
+            .keyboardF13, .keyboardF14, .keyboardF15, .keyboardF16,
+            .keyboardF17, .keyboardF18, .keyboardF19, .keyboardF20,
+        ]
+        let expectedExtended = [25, 26, 28, 29, 31, 32, 33, 34]
+            .map { Array("\u{1b}[\($0)~".utf8) }
+        let extendedSequences = extendedKeyCodes
+            .compactMap(TerminalView.legacyFunctionKeySequence(for:))
+        #expect(extendedSequences == expectedExtended)
+        #expect(Set(baseSequences.compactMap { $0 } + extendedSequences).count == 20)
+        #expect(TerminalView.legacyFunctionKeySequence(for: .keyboardF21) == nil)
     }
 
     @Test("Insert and forward Delete send their xterm editing sequences")
@@ -47,6 +57,8 @@ struct IOSLegacyFunctionKeyTests {
             (.keyboardF3, [.shift, .control], false, "\u{1b}[1;6R"),
             (.keyboardF5, .alternate, true, "\u{1b}[15;3~"),
             (.keyboardF12, [.shift, .alternate, .control], true, "\u{1b}[24;8~"),
+            (.keyboardF13, .control, false, "\u{1b}[25;5~"),
+            (.keyboardF20, [.shift, .alternate, .control], true, "\u{1b}[34;8~"),
         ]
 
         for (keyCode, flags, includeAlternate, expected) in cases {
@@ -58,6 +70,60 @@ struct IOSLegacyFunctionKeyTests {
                 ) == Array(expected.utf8)
             )
         }
+    }
+
+    @Test("DECKPAM maps every physical numeric-keypad key and DECKPNM yields text to UIKit")
+    func applicationKeypadModeIsCompleteAndReversible() {
+        let cases: [(UIKeyboardHIDUsage, String)] = [
+            (.keypadAsterisk, "\u{1b}Oj"),
+            (.keypadPlus, "\u{1b}Ok"),
+            (.keypadComma, "\u{1b}Ol"),
+            (.keypadHyphen, "\u{1b}Om"),
+            (.keypadPeriod, "\u{1b}On"),
+            (.keypadSlash, "\u{1b}Oo"),
+            (.keypad0, "\u{1b}Op"),
+            (.keypad1, "\u{1b}Oq"),
+            (.keypad2, "\u{1b}Or"),
+            (.keypad3, "\u{1b}Os"),
+            (.keypad4, "\u{1b}Ot"),
+            (.keypad5, "\u{1b}Ou"),
+            (.keypad6, "\u{1b}Ov"),
+            (.keypad7, "\u{1b}Ow"),
+            (.keypad8, "\u{1b}Ox"),
+            (.keypad9, "\u{1b}Oy"),
+            (.keypadEqualSign, "\u{1b}OX"),
+            (.keypadEqualSignAS400, "\u{1b}OX"),
+            (.keypadEnter, "\u{1b}OM"),
+        ]
+
+        let (terminal, _) = TerminalTestHarness.makeTerminal()
+        #expect(!terminal.applicationKeypad)
+        for (keyCode, _) in cases {
+            #expect(TerminalView.legacyKeypadSequence(
+                for: keyCode,
+                applicationKeypad: terminal.applicationKeypad
+            ) == nil)
+        }
+
+        terminal.feed(text: "\u{1b}=")
+        #expect(terminal.applicationKeypad)
+        for (keyCode, expected) in cases {
+            #expect(TerminalView.legacyKeypadSequence(
+                for: keyCode,
+                applicationKeypad: terminal.applicationKeypad
+            ) == Array(expected.utf8))
+        }
+        #expect(TerminalView.legacyKeypadSequence(
+            for: .keypadNumLock,
+            applicationKeypad: true
+        ) == nil)
+
+        terminal.feed(text: "\u{1b}>")
+        #expect(!terminal.applicationKeypad)
+        #expect(TerminalView.legacyKeypadSequence(
+            for: .keypad1,
+            applicationKeypad: terminal.applicationKeypad
+        ) == nil)
     }
 
     @Test("unmodified, composed Option and Command stay outside xterm modifier encoding")
