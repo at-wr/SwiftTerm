@@ -2669,6 +2669,17 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
         default: nil
         }
     }
+
+    /// Maps editing-cluster keys whose legacy xterm sequences do not depend
+    /// on application-cursor mode. Keep Insert beside Delete so a PC keyboard
+    /// never silently loses the former while the latter continues to work.
+    static func legacyEditingKeySequence(for keyCode: UIKeyboardHIDUsage) -> [UInt8]? {
+        switch keyCode {
+        case .keyboardInsert: EscapeSequences.cmdInsert
+        case .keyboardDeleteForward: EscapeSequences.cmdDelKey
+        default: nil
+        }
+    }
     
     open override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         var didHandleEvent = false
@@ -2890,15 +2901,11 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
                 
             case .keyboardEnd:
                 data = .bytes (terminal.applicationCursor ? EscapeSequences.moveEndApp : EscapeSequences.moveEndNormal)
-            case .keyboardDeleteForward:
-                data = .bytes (EscapeSequences.cmdDelKey)
+            case .keyboardInsert, .keyboardDeleteForward:
+                data = Self.legacyEditingKeySequence(for: key.keyCode).map { .bytes($0) }
                 
             case .keyboardEscape:
                 data = .bytes ([0x1b])
-                
-            case .keyboardInsert:
-                print (".keyboardInsert ignored")
-                break
                 
             case .keyboardTab:
                 if key.modifierFlags.contains ([.shift]) {
