@@ -62,6 +62,19 @@ struct IOSSoftwareModifierInputTests {
         #expect(!view.metaModifier)
     }
 
+    @Test("unsupported Control text never degrades into a bare Meta Escape")
+    func unsupportedControlMetaText() {
+        let (view, delegate) = makeView()
+        view.controlModifier = true
+        view.metaModifier = true
+
+        view.insertText("😀")
+
+        #expect(delegate.sent.isEmpty)
+        #expect(!view.controlModifier)
+        #expect(!view.metaModifier)
+    }
+
     @Test("Meta Backspace prefixes the configured legacy erase byte")
     func metaBackspace() {
         let (view, delegate) = makeView()
