@@ -2680,6 +2680,65 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
         default: nil
         }
     }
+
+    /// Encodes the Shift/Alt/Control parameter used by xterm's legacy
+    /// cursor-, editing- and function-key forms. Command remains UIKit-owned
+    /// in legacy mode: treating it as xterm Meta would misrepresent a Mac/iPad
+    /// Super key and can steal a registered host-app shortcut.
+    static func legacyModifiedKeySequence(
+        for keyCode: UIKeyboardHIDUsage,
+        modifierFlags: UIKeyModifierFlags,
+        includeAlternate: Bool
+    ) -> [UInt8]? {
+        guard !modifierFlags.contains(.command) else { return nil }
+
+        var modifierBits = 0
+        if modifierFlags.contains(.shift) { modifierBits |= 1 }
+        if includeAlternate, modifierFlags.contains(.alternate) { modifierBits |= 2 }
+        if modifierFlags.contains(.control) { modifierBits |= 4 }
+        guard modifierBits != 0 else { return nil }
+
+        let modifier = modifierBits + 1
+        func csi(_ body: String) -> [UInt8] {
+            [ControlCodes.ESC, 0x5b] + [UInt8](body.utf8)
+        }
+
+        switch keyCode {
+        case .keyboardUpArrow: return csi("1;\(modifier)A")
+        case .keyboardDownArrow: return csi("1;\(modifier)B")
+        case .keyboardRightArrow: return csi("1;\(modifier)C")
+        case .keyboardLeftArrow: return csi("1;\(modifier)D")
+        case .keyboardHome: return csi("1;\(modifier)H")
+        case .keyboardEnd: return csi("1;\(modifier)F")
+        case .keyboardInsert: return csi("2;\(modifier)~")
+        case .keyboardDeleteForward: return csi("3;\(modifier)~")
+        case .keyboardPageUp: return csi("5;\(modifier)~")
+        case .keyboardPageDown: return csi("6;\(modifier)~")
+        case .keyboardF1: return csi("1;\(modifier)P")
+        case .keyboardF2: return csi("1;\(modifier)Q")
+        case .keyboardF3: return csi("1;\(modifier)R")
+        case .keyboardF4: return csi("1;\(modifier)S")
+        case .keyboardF5: return csi("15;\(modifier)~")
+        case .keyboardF6: return csi("17;\(modifier)~")
+        case .keyboardF7: return csi("18;\(modifier)~")
+        case .keyboardF8: return csi("19;\(modifier)~")
+        case .keyboardF9: return csi("20;\(modifier)~")
+        case .keyboardF10: return csi("21;\(modifier)~")
+        case .keyboardF11: return csi("23;\(modifier)~")
+        case .keyboardF12: return csi("24;\(modifier)~")
+        default: return nil
+        }
+    }
+
+    /// A Command chord that is not SwiftTerm's own Option-mode toggle belongs
+    /// to UIKit/its registered UIKeyCommand owner in legacy keyboard mode.
+    static func shouldYieldLegacyKeyToUIKit(
+        modifierFlags: UIKeyModifierFlags,
+        charactersIgnoringModifiers: String
+    ) -> Bool {
+        guard modifierFlags.contains(.command) else { return false }
+        return !(modifierFlags.contains(.alternate) && charactersIgnoringModifiers == "o")
+    }
     
     open override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         var didHandleEvent = false
@@ -2831,8 +2890,20 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
                 pendingKittyKeyEvent = PendingKittyKeyEvent(key: key, eventType: .press)
                 continue
             }
+
+            if Self.shouldYieldLegacyKeyToUIKit(
+                modifierFlags: key.modifierFlags,
+                charactersIgnoringModifiers: key.charactersIgnoringModifiers
+            ) {
+                continue
+            }
                 
             var data: SendData? = nil
+            let modifiedSequence = Self.legacyModifiedKeySequence(
+                for: key.keyCode,
+                modifierFlags: key.modifierFlags,
+                includeAlternate: optionAsMetaKey
+            )
 
             switch key.keyCode {
             case .keyboardCapsLock:
@@ -2864,45 +2935,47 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
             case .keyboardScrollLock:
                 break // ignored
             case .keyboardUpArrow:
-                data = .bytes (terminal.applicationCursor ? EscapeSequences.moveUpApp : EscapeSequences.moveUpNormal)
+                data = .bytes(modifiedSequence
+                    ?? (terminal.applicationCursor ? EscapeSequences.moveUpApp : EscapeSequences.moveUpNormal))
             case .keyboardDownArrow:
-                data = .bytes (terminal.applicationCursor ? EscapeSequences.moveDownApp : EscapeSequences.moveDownNormal)
+                data = .bytes(modifiedSequence
+                    ?? (terminal.applicationCursor ? EscapeSequences.moveDownApp : EscapeSequences.moveDownNormal))
             case .keyboardLeftArrow:
                 if key.modifierFlags.contains ([.alternate]) {
                     data = .bytes (EscapeSequences.emacsBack)
-                } else if key.modifierFlags.contains ([.control]) {
-                    data = .bytes (EscapeSequences.controlLeft)
                 } else {
-                    data = .bytes (terminal.applicationCursor ? EscapeSequences.moveLeftApp : EscapeSequences.moveLeftNormal)
+                    data = .bytes(modifiedSequence
+                        ?? (terminal.applicationCursor ? EscapeSequences.moveLeftApp : EscapeSequences.moveLeftNormal))
                 }
             case .keyboardRightArrow:
                 if key.modifierFlags.contains ([.alternate]) {
                     data = .bytes (EscapeSequences.emacsForward)
-                } else if key.modifierFlags.contains ([.control]) {
-                    data = .bytes (EscapeSequences.controlRight)
                 } else {
-                    data = .bytes (terminal.applicationCursor ? EscapeSequences.moveRightApp : EscapeSequences.moveRightNormal)
+                    data = .bytes(modifiedSequence
+                        ?? (terminal.applicationCursor ? EscapeSequences.moveRightApp : EscapeSequences.moveRightNormal))
                 }
             case .keyboardPageUp:
                 if terminal.applicationCursor {
-                    data = .bytes (EscapeSequences.cmdPageUp)
+                    data = .bytes(modifiedSequence ?? EscapeSequences.cmdPageUp)
                 } else {
                     pageUp()
                 }
 
             case .keyboardPageDown:
                 if terminal.applicationCursor {
-                    data = .bytes (EscapeSequences.cmdPageDown)
+                    data = .bytes(modifiedSequence ?? EscapeSequences.cmdPageDown)
                 } else {
                     pageDown()
                 }
             case .keyboardHome:
-                data = .bytes (terminal.applicationCursor ? EscapeSequences.moveHomeApp : EscapeSequences.moveHomeNormal)
+                data = .bytes(modifiedSequence
+                    ?? (terminal.applicationCursor ? EscapeSequences.moveHomeApp : EscapeSequences.moveHomeNormal))
                 
             case .keyboardEnd:
-                data = .bytes (terminal.applicationCursor ? EscapeSequences.moveEndApp : EscapeSequences.moveEndNormal)
+                data = .bytes(modifiedSequence
+                    ?? (terminal.applicationCursor ? EscapeSequences.moveEndApp : EscapeSequences.moveEndNormal))
             case .keyboardInsert, .keyboardDeleteForward:
-                data = Self.legacyEditingKeySequence(for: key.keyCode).map { .bytes($0) }
+                data = (modifiedSequence ?? Self.legacyEditingKeySequence(for: key.keyCode)).map { .bytes($0) }
                 
             case .keyboardEscape:
                 data = .bytes ([0x1b])
@@ -2917,7 +2990,7 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
             case .keyboardF1, .keyboardF2, .keyboardF3, .keyboardF4,
                  .keyboardF5, .keyboardF6, .keyboardF7, .keyboardF8,
                  .keyboardF9, .keyboardF10, .keyboardF11, .keyboardF12:
-                data = Self.legacyFunctionKeySequence(for: key.keyCode).map { .bytes($0) }
+                data = (modifiedSequence ?? Self.legacyFunctionKeySequence(for: key.keyCode)).map { .bytes($0) }
             case .keyboardF13, .keyboardF14, .keyboardF15, .keyboardF16,
                  .keyboardF17, .keyboardF18, .keyboardF19, .keyboardF20, .keyboardF21,
                  .keyboardF22, .keyboardF23, .keyboardF24:
