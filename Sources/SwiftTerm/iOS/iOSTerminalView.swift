@@ -3367,11 +3367,12 @@ extension TerminalView: UIAccessibilityReadingContent {
     }
 
     public func accessibilityLineNumber(for point: CGPoint) -> Int {
-        // UIKit supplies this point in screen coordinates. Converting through
-        // the scroll view also accounts for its bounds origin/content offset.
-        let localPoint = convert(point, from: nil)
+        // UIAccessibilityReadingContent supplies this point in the receiver's
+        // view coordinate space. For this UIScrollView subclass that space
+        // already includes bounds.origin/contentOffset; treating it as a
+        // window point would apply the view transform a second time.
         return AccessibilityReadingPolicy.lineNumber(
-            atContentY: Double(localPoint.y),
+            atContentY: Double(point.y),
             lineHeight: Double(cellDimension.height),
             lineCount: terminal.displayBuffer.lines.count
         ) ?? NSNotFound
