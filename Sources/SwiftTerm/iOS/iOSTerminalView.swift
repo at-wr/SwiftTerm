@@ -2614,6 +2614,28 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
     /// It looks like sending carriage return works on Unix and Windows remote hosts, so add that, but keeping a public
     /// property in case someone needs the return key to send different sequences.
     public var returnByteSequence: [UInt8] = [13]
+
+    /// Maps the twelve function keys available on ordinary PC-style hardware
+    /// keyboards to their xterm-compatible legacy sequences. Keep this mapping
+    /// explicit so an index typo cannot silently make two physical keys emit
+    /// the same sequence.
+    static func legacyFunctionKeySequence(for keyCode: UIKeyboardHIDUsage) -> [UInt8]? {
+        switch keyCode {
+        case .keyboardF1: EscapeSequences.cmdF[0]
+        case .keyboardF2: EscapeSequences.cmdF[1]
+        case .keyboardF3: EscapeSequences.cmdF[2]
+        case .keyboardF4: EscapeSequences.cmdF[3]
+        case .keyboardF5: EscapeSequences.cmdF[4]
+        case .keyboardF6: EscapeSequences.cmdF[5]
+        case .keyboardF7: EscapeSequences.cmdF[6]
+        case .keyboardF8: EscapeSequences.cmdF[7]
+        case .keyboardF9: EscapeSequences.cmdF[8]
+        case .keyboardF10: EscapeSequences.cmdF[9]
+        case .keyboardF11: EscapeSequences.cmdF[10]
+        case .keyboardF12: EscapeSequences.cmdF[11]
+        default: nil
+        }
+    }
     
     open override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         var didHandleEvent = false
@@ -2802,29 +2824,11 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
                     data = .bytes ([9])
                 }
 
-            case .keyboardF1:
-                data = .bytes (EscapeSequences.cmdF [0])
-            case .keyboardF2:
-                data = .bytes (EscapeSequences.cmdF [1])
-            case .keyboardF3:
-                data = .bytes (EscapeSequences.cmdF [2])
-            case .keyboardF4:
-                data = .bytes (EscapeSequences.cmdF [3])
-            case .keyboardF5:
-                data = .bytes (EscapeSequences.cmdF [4])
-            case .keyboardF6:
-                data = .bytes (EscapeSequences.cmdF [5])
-            case .keyboardF7:
-                data = .bytes (EscapeSequences.cmdF [6])
-            case .keyboardF8:
-                data = .bytes (EscapeSequences.cmdF [7])
-            case .keyboardF9:
-                data = .bytes (EscapeSequences.cmdF [8])
-            case .keyboardF10:
-                data = .bytes (EscapeSequences.cmdF [8])
-            case .keyboardF11:
-                data = .bytes (EscapeSequences.cmdF [10])
-            case .keyboardF12, .keyboardF13, .keyboardF14, .keyboardF15, .keyboardF16,
+            case .keyboardF1, .keyboardF2, .keyboardF3, .keyboardF4,
+                 .keyboardF5, .keyboardF6, .keyboardF7, .keyboardF8,
+                 .keyboardF9, .keyboardF10, .keyboardF11, .keyboardF12:
+                data = Self.legacyFunctionKeySequence(for: key.keyCode).map { .bytes($0) }
+            case .keyboardF13, .keyboardF14, .keyboardF15, .keyboardF16,
                  .keyboardF17, .keyboardF18, .keyboardF19, .keyboardF20, .keyboardF21,
                  .keyboardF22, .keyboardF23, .keyboardF24:
                 break
