@@ -2615,10 +2615,9 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
     /// property in case someone needs the return key to send different sequences.
     public var returnByteSequence: [UInt8] = [13]
 
-    /// Maps the twelve function keys available on ordinary PC-style hardware
-    /// keyboards to their xterm-compatible legacy sequences. Keep this mapping
-    /// explicit so an index typo cannot silently make two physical keys emit
-    /// the same sequence.
+    /// Maps the PC F1-F12 row plus the VT220 F13-F20 extension to their
+    /// xterm-compatible legacy sequences. Keep this mapping explicit so an
+    /// index typo cannot silently make two physical keys emit the same sequence.
     static func legacyFunctionKeySequence(for keyCode: UIKeyboardHIDUsage) -> [UInt8]? {
         switch keyCode {
         case .keyboardF1: EscapeSequences.cmdF[0]
@@ -2633,6 +2632,14 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
         case .keyboardF10: EscapeSequences.cmdF[9]
         case .keyboardF11: EscapeSequences.cmdF[10]
         case .keyboardF12: EscapeSequences.cmdF[11]
+        case .keyboardF13: [ControlCodes.ESC, 0x5b, 0x32, 0x35, 0x7e]
+        case .keyboardF14: [ControlCodes.ESC, 0x5b, 0x32, 0x36, 0x7e]
+        case .keyboardF15: [ControlCodes.ESC, 0x5b, 0x32, 0x38, 0x7e]
+        case .keyboardF16: [ControlCodes.ESC, 0x5b, 0x32, 0x39, 0x7e]
+        case .keyboardF17: [ControlCodes.ESC, 0x5b, 0x33, 0x31, 0x7e]
+        case .keyboardF18: [ControlCodes.ESC, 0x5b, 0x33, 0x32, 0x7e]
+        case .keyboardF19: [ControlCodes.ESC, 0x5b, 0x33, 0x33, 0x7e]
+        case .keyboardF20: [ControlCodes.ESC, 0x5b, 0x33, 0x34, 0x7e]
         default: nil
         }
     }
@@ -2645,6 +2652,39 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
         case .keyboardInsert: EscapeSequences.cmdInsert
         case .keyboardDeleteForward: EscapeSequences.cmdDelKey
         default: nil
+        }
+    }
+
+    /// Maps physical numeric-keypad keys while the remote application has
+    /// selected DECKPAM. Returning nil in DECKPNM is intentional: UIKit then
+    /// supplies the active-layout numeric character through `insertText`.
+    static func legacyKeypadSequence(
+        for keyCode: UIKeyboardHIDUsage,
+        applicationKeypad: Bool
+    ) -> [UInt8]? {
+        guard applicationKeypad else { return nil }
+
+        let ss3: [UInt8] = [ControlCodes.ESC, 0x4f]
+        switch keyCode {
+        case .keypadAsterisk: return ss3 + [0x6a]
+        case .keypadPlus: return ss3 + [0x6b]
+        case .keypadComma: return ss3 + [0x6c]
+        case .keypadHyphen: return ss3 + [0x6d]
+        case .keypadPeriod: return ss3 + [0x6e]
+        case .keypadSlash: return ss3 + [0x6f]
+        case .keypad0: return ss3 + [0x70]
+        case .keypad1: return ss3 + [0x71]
+        case .keypad2: return ss3 + [0x72]
+        case .keypad3: return ss3 + [0x73]
+        case .keypad4: return ss3 + [0x74]
+        case .keypad5: return ss3 + [0x75]
+        case .keypad6: return ss3 + [0x76]
+        case .keypad7: return ss3 + [0x77]
+        case .keypad8: return ss3 + [0x78]
+        case .keypad9: return ss3 + [0x79]
+        case .keypadEqualSign, .keypadEqualSignAS400: return ss3 + [0x58]
+        case .keypadEnter: return ss3 + [0x4d]
+        default: return nil
         }
     }
 
@@ -2693,6 +2733,14 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
         case .keyboardF10: return csi("21;\(modifier)~")
         case .keyboardF11: return csi("23;\(modifier)~")
         case .keyboardF12: return csi("24;\(modifier)~")
+        case .keyboardF13: return csi("25;\(modifier)~")
+        case .keyboardF14: return csi("26;\(modifier)~")
+        case .keyboardF15: return csi("28;\(modifier)~")
+        case .keyboardF16: return csi("29;\(modifier)~")
+        case .keyboardF17: return csi("31;\(modifier)~")
+        case .keyboardF18: return csi("32;\(modifier)~")
+        case .keyboardF19: return csi("33;\(modifier)~")
+        case .keyboardF20: return csi("34;\(modifier)~")
         default: return nil
         }
     }
@@ -2906,12 +2954,31 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
 
             case .keyboardF1, .keyboardF2, .keyboardF3, .keyboardF4,
                  .keyboardF5, .keyboardF6, .keyboardF7, .keyboardF8,
-                 .keyboardF9, .keyboardF10, .keyboardF11, .keyboardF12:
+                 .keyboardF9, .keyboardF10, .keyboardF11, .keyboardF12,
+                 .keyboardF13, .keyboardF14, .keyboardF15, .keyboardF16,
+                 .keyboardF17, .keyboardF18, .keyboardF19, .keyboardF20:
                 data = (modifiedSequence ?? Self.legacyFunctionKeySequence(for: key.keyCode)).map { .bytes($0) }
-            case .keyboardF13, .keyboardF14, .keyboardF15, .keyboardF16,
-                 .keyboardF17, .keyboardF18, .keyboardF19, .keyboardF20, .keyboardF21,
-                 .keyboardF22, .keyboardF23, .keyboardF24:
+            case .keyboardF21, .keyboardF22, .keyboardF23, .keyboardF24:
                 break
+            case .keypadSlash, .keypadAsterisk, .keypadHyphen, .keypadPlus,
+                 .keypadEnter, .keypad0, .keypad1, .keypad2, .keypad3,
+                 .keypad4, .keypad5, .keypad6, .keypad7, .keypad8,
+                 .keypad9, .keypadPeriod, .keypadEqualSign,
+                 .keypadEqualSignAS400, .keypadComma:
+                if let applicationSequence = Self.legacyKeypadSequence(
+                    for: key.keyCode,
+                    applicationKeypad: terminal.applicationKeypad
+                ) {
+                    data = .bytes(applicationSequence)
+                } else if (key.modifierFlags.contains(.alternate) && optionAsMetaKey) || metaModifier {
+                    data = .text("\u{1b}\(key.charactersIgnoringModifiers)")
+                    metaModifier = false
+                } else if key.modifierFlags.contains(.control) {
+                    let controlBytes = applyControlToEventCharacters(key.charactersIgnoringModifiers)
+                    if !controlBytes.isEmpty {
+                        data = .bytes(controlBytes)
+                    }
+                }
             case .keyboardPause, .keyboardStop, .keyboardMute, .keyboardVolumeUp, .keyboardVolumeDown:
                 break
                 
