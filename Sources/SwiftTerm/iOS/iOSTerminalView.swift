@@ -673,7 +673,7 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
     ///  - pos: the location where this was triggered in the buffer, it used at a later point
     ///  to auto-select a word
     func showContextMenu (forRegion: CGRect, pos: Position) {
-        var items: [UIMenuItem] = []
+        let items: [UIMenuItem] = []
         
         lastLongSelect = pos
         lastLongSelectRegion = forRegion
