@@ -40,6 +40,7 @@ public extension Notification.Name {
 /// text belongs to `insertText(_:)` or the host's paste path.
 public enum TerminalSimulatedKey: Equatable, Sendable {
     case text(String)
+    case enter
     case escape
     case tab
     case insert
@@ -2396,6 +2397,19 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
         _ key: TerminalSimulatedKey,
         modifiers: KittyKeyboardModifiers = []
     ) -> Bool {
+        // Shift-Return is a deliberate legacy convenience: unlike Return's
+        // carriage return, it emits a line feed so shells and TUIs can bind the
+        // two independently. Once a foreground program negotiates Kitty
+        // keyboard enhancements, preserve the semantic key and modifiers for
+        // that protocol instead of collapsing them to a byte.
+        if key == .enter, terminal.keyboardEnhancementFlags.isEmpty {
+            let base = modifiers.contains(.shift)
+                ? [ControlCodes.LF]
+                : returnByteSequence
+            send((modifiers.contains(.alt) ? [ControlCodes.ESC] : []) + base)
+            return true
+        }
+
         let kittyKey: KittyKey
         let text: String?
         switch key {
@@ -2410,6 +2424,7 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
             // carries committed text; the encoder must still interpret Alt
             // and Control itself.
             text = modifiers.intersection([.alt, .ctrl]).isEmpty ? value : nil
+        case .enter: kittyKey = .functional(.enter); text = nil
         case .escape: kittyKey = .functional(.escape); text = nil
         case .tab: kittyKey = .functional(.tab); text = nil
         case .insert: kittyKey = .functional(.insert); text = nil
@@ -2855,6 +2870,28 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
         return stickyMeta || optionMeta ? [ControlCodes.ESC] + base : base
     }
 
+    /// Gives Shift-Return a distinct line-feed encoding in legacy mode.
+    /// Option participates only when the embedder configured it as Meta;
+    /// Command remains UIKit-owned, and Control does not change this explicit
+    /// Shift-Return contract. Negotiated Kitty input bypasses this helper so
+    /// the remote program receives Enter plus its real modifier set.
+    static func legacyShiftReturnSequence(
+        for keyCode: UIKeyboardHIDUsage,
+        modifierFlags: UIKeyModifierFlags,
+        includeAlternate: Bool,
+        stickyMeta: Bool
+    ) -> [UInt8]? {
+        guard keyCode == .keyboardReturnOrEnter,
+              modifierFlags.contains(.shift),
+              !modifierFlags.contains(.command)
+        else { return nil }
+
+        let optionMeta = includeAlternate && modifierFlags.contains(.alternate)
+        return stickyMeta || optionMeta
+            ? [ControlCodes.ESC, ControlCodes.LF]
+            : [ControlCodes.LF]
+    }
+
     /// Maps physical numeric-keypad keys while the remote application has
     /// selected DECKPAM. Returning nil in DECKPNM is intentional: UIKit then
     /// supplies the active-layout numeric character through `insertText`.
@@ -3195,6 +3232,18 @@ open class TerminalView: UIScrollView, UITextInputTraits, UIKeyInput, UIScrollVi
             case .keyboardEscape, .keyboardTab:
                 let stickyMeta = metaModifier
                 data = Self.legacyControlKeySequence(
+                    for: key.keyCode,
+                    modifierFlags: key.modifierFlags,
+                    includeAlternate: optionAsMetaKey,
+                    stickyMeta: stickyMeta
+                ).map { .bytes($0) }
+                if stickyMeta, data != nil {
+                    metaModifier = false
+                }
+
+            case .keyboardReturnOrEnter:
+                let stickyMeta = metaModifier
+                data = Self.legacyShiftReturnSequence(
                     for: key.keyCode,
                     modifierFlags: key.modifierFlags,
                     includeAlternate: optionAsMetaKey,

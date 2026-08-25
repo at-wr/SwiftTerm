@@ -56,6 +56,11 @@ struct IOSSimulatedKeyInputTests {
     func legacyControlAndTextKeys() {
         let (view, delegate) = makeView()
 
+        #expect(view.sendSimulatedKey(.enter))
+        #expect(view.sendSimulatedKey(.enter, modifiers: [.shift]))
+        #expect(view.sendSimulatedKey(.enter, modifiers: [.shift, .alt]))
+        view.returnByteSequence = [ControlCodes.LF, ControlCodes.CR]
+        #expect(view.sendSimulatedKey(.enter))
         #expect(view.sendSimulatedKey(.tab, modifiers: [.shift]))
         #expect(view.sendSimulatedKey(.tab, modifiers: [.shift, .alt]))
         #expect(view.sendSimulatedKey(.text("\\"), modifiers: [.ctrl]))
@@ -63,6 +68,10 @@ struct IOSSimulatedKeyInputTests {
         #expect(view.sendSimulatedKey(.text("/"), modifiers: [.ctrl, .shift]))
 
         #expect(delegate.packets == [
+            [ControlCodes.CR],
+            [ControlCodes.LF],
+            [ControlCodes.ESC, ControlCodes.LF],
+            [ControlCodes.LF, ControlCodes.CR],
             Array("\u{1B}[Z".utf8),
             Array("\u{1B}\u{1B}[Z".utf8),
             [28],
@@ -76,8 +85,12 @@ struct IOSSimulatedKeyInputTests {
         let (view, delegate) = makeView()
         view.feed(text: "\u{1B}[>1u")
 
+        #expect(view.sendSimulatedKey(.enter, modifiers: [.shift]))
         #expect(view.sendSimulatedKey(.tab, modifiers: [.shift]))
-        #expect(delegate.packets == [Array("\u{1B}[9;2u".utf8)])
+        #expect(delegate.packets == [
+            Array("\u{1B}[13;2u".utf8),
+            Array("\u{1B}[9;2u".utf8),
+        ])
     }
 
     @Test("simulated text refuses bulk and multi-scalar injection")

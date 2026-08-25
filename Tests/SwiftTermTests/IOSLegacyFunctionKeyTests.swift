@@ -82,6 +82,34 @@ struct IOSLegacyFunctionKeyTests {
         ) == nil)
     }
 
+    @Test("legacy Shift-Return emits LF and preserves configured Meta")
+    func legacyShiftReturn() {
+        #expect(TerminalView.legacyShiftReturnSequence(
+            for: .keyboardReturnOrEnter,
+            modifierFlags: .shift,
+            includeAlternate: false,
+            stickyMeta: false
+        ) == [ControlCodes.LF])
+        #expect(TerminalView.legacyShiftReturnSequence(
+            for: .keyboardReturnOrEnter,
+            modifierFlags: [.shift, .control, .alternate],
+            includeAlternate: true,
+            stickyMeta: false
+        ) == [ControlCodes.ESC, ControlCodes.LF])
+        #expect(TerminalView.legacyShiftReturnSequence(
+            for: .keyboardReturnOrEnter,
+            modifierFlags: [.shift, .command],
+            includeAlternate: true,
+            stickyMeta: true
+        ) == nil)
+        #expect(TerminalView.legacyShiftReturnSequence(
+            for: .keyboardTab,
+            modifierFlags: .shift,
+            includeAlternate: false,
+            stickyMeta: false
+        ) == nil)
+    }
+
     @Test("Shift, Option and Control use xterm modifier parameters")
     func modifiedCursorEditingAndFunctionKeys() {
         let cases: [(UIKeyboardHIDUsage, UIKeyModifierFlags, Bool, String)] = [
